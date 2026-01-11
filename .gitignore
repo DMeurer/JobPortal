@@ -1,5 +1,6 @@
 .env
 backup_2026-01-10.sql
+backup.sql
 
 .idea/
 .claude/
