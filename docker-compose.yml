@@ -1,0 +1,108 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: jobportal_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - jobportal_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Backend API
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    container_name: jobportal_backend
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${POSTGRES_DB}
+      DATABASE_USER: ${POSTGRES_USER}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      # Fixed API Keys - CHANGE THESE IN PRODUCTION!
+      API_KEY_ADMIN: ${API_KEY_ADMIN:-admin_key_change_in_production}
+      API_KEY_WEBSCRAPER: ${API_KEY_WEBSCRAPER:-webscraper_key_change_in_production}
+      API_KEY_FULLREAD: ${API_KEY_FULLREAD:-fullread_key_change_in_production}
+      API_KEY_FRONTEND: ${API_KEY_FRONTEND:-frontend_key_change_in_production}
+    ports:
+      - "8000:8000"
+    networks:
+      - jobportal_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # Frontend Web Application
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    container_name: jobportal_frontend
+    environment:
+      # Default API key for frontend (basic read-only access)
+      DEFAULT_API_KEY: ${API_KEY_FRONTEND:-frontend_key_change_in_production}
+      # Default API URL (accessible from browser)
+      # Use localhost:8000 since the frontend is accessed from the browser
+      DEFAULT_API_URL: http://localhost:8000
+    ports:
+      - "4200:80"
+    networks:
+      - jobportal_network
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Runners - Scheduled job scrapers
+  # Set RUNNER_MODE=once to run once and exit
+  # Set RUNNER_MODE=cron to run on schedule (default)
+  runners:
+    build:
+      context: ./Runners
+      dockerfile: Dockerfile
+    container_name: jobportal_runners
+    environment:
+      API_URL: http://backend:8000
+      # API Key for authentication (read + write permissions required)
+      # Uses the webscraper key by default (has read + write permissions)
+      # Can be overridden with environment variable
+      API_KEY: ${API_KEY_WEBSCRAPER:-webscraper_key_change_in_production}
+      # Cron schedule (default: daily at 2 AM)
+      # Examples:
+      # "0 2 * * *"      - Every day at 2 AM
+      # "0 */6 * * *"    - Every 6 hours
+      # "*/30 * * * *"   - Every 30 minutes
+      # "0 0 * * 0"      - Every Sunday at midnight
+      CRON_SCHEDULE: "0 2 * * *"
+      # Mode: cron (scheduled) or once (run once and exit)
+      RUNNER_MODE: cron
+    networks:
+      - jobportal_network
+    depends_on:
+      - backend
+    volumes:
+      - runner_logs:/app/logs
+    restart: unless-stopped
+
+networks:
+  jobportal_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  runner_logs:

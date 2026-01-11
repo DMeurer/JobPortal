@@ -1,9 +1,9 @@
 [submodule "Backend"]
 	path = Backend
-	url = ./Backend
+	url = git@github.com:DMeurer/JobPortal-Backend.git
 [submodule "Frontend"]
 	path = Frontend
-	url = ./Frontend
+	url = git@github.com:DMeurer/JobPortal-Frontend.git
 [submodule "Runners"]
 	path = Runners
-	url = ./Runners
+	url = git@github.com:DMeurer/JobPortal-Runners.git

@@ -1,0 +1,8 @@
+.env
+backup_2026-01-10.sql
+
+.idea/
+.claude/
+.venv/
+
+nul
