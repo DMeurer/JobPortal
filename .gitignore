@@ -6,3 +6,4 @@ backup_2026-01-10.sql
 .venv/
 
 nul
+tmpclaude-*-cwd
