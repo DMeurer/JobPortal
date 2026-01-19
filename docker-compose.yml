@@ -59,7 +59,7 @@ services:
       DEFAULT_API_KEY: ${API_KEY_FRONTEND:-frontend_key_change_in_production}
       # Default API URL (accessible from browser)
       # Use localhost:8000 since the frontend is accessed from the browser
-      DEFAULT_API_URL: ${API_URL_FRONTEND:http://localhost:8000}
+      DEFAULT_API_URL: ${API_URL_FRONTEND:-http://localhost:8000}
     ports:
       - "4200:80"
     networks:
