@@ -46,7 +46,9 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # Command comes from the image CMD. Do not add --reload here: it starts a
+    # file-watching reloader process and restarts the app mid-request on any
+    # file change. docker-compose.override.yml enables it for local development.
 
   # Frontend Web Application
   frontend:
