@@ -45,6 +45,16 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Liveness only: /health proves the application is accepting requests and
+    # PostgreSQL is reachable. Data freshness is intentionally separate at
+    # /health/data for Uptime Kuma, so a late scraper run does not restart a
+    # healthy API container.
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://localhost:8000/health > /dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
     # Command comes from the image CMD. Do not add --reload here: it starts a
     # file-watching reloader process and restarts the app mid-request on any
@@ -67,7 +77,8 @@ services:
     networks:
       - jobportal_network
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
   # Runners - Scheduled job scrapers
@@ -96,7 +107,8 @@ services:
     networks:
       - jobportal_network
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     volumes:
       - runner_logs:/app/logs
     restart: unless-stopped
