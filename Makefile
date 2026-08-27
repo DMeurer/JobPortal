@@ -57,6 +57,31 @@ restore-db: ## Restore database from backup.sql
 	docker compose exec -T postgres psql -U jobportal_user jobportal < backup.sql
 	@echo "Database restored from backup.sql"
 
+refresh-stats: ## Rebuild the statistics materialized view (safe to run any time)
+	docker compose exec -T postgres psql -U jobportal_user -d jobportal \
+		-c "REFRESH MATERIALIZED VIEW CONCURRENTLY company_date_statistics"
+	@echo "Statistics refreshed"
+
+rebuild-stats: ## Force a blocking rebuild of the statistics view (use if refresh-stats fails)
+	docker compose exec -T postgres psql -U jobportal_user -d jobportal \
+		-c "REFRESH MATERIALIZED VIEW company_date_statistics"
+	@echo "Statistics rebuilt"
+
+stats-status: ## Show statistics view row count and how current it is
+	@docker compose exec -T postgres psql -U jobportal_user -d jobportal -c \
+		"SELECT (SELECT count(*) FROM company_date_statistics) AS view_rows, \
+		        (SELECT max(scrape_date) FROM company_date_statistics) AS view_latest, \
+		        (SELECT max(scrape_date) FROM inserts) AS data_latest, \
+		        CASE WHEN (SELECT max(scrape_date) FROM company_date_statistics) \
+		                = (SELECT max(scrape_date) FROM inserts) \
+		             THEN 'current' ELSE 'STALE - run make refresh-stats' END AS state"
+
+test-backend: ## Run backend tests
+	docker compose exec -T -e PYTHONPATH=/app -w /app backend python -m pytest tests -q
+
+test-frontend: ## Run frontend tests
+	cd Frontend && npm test -- --watch=false
+
 test-api: ## Test API endpoints
 	@echo "Testing API health..."
 	curl http://localhost:8000/
