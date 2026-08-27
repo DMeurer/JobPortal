@@ -1,6 +1,11 @@
 .env
-backup_2026-01-10.sql
-backup.sql
+
+# Database dumps - these contain live data and real API keys, never commit them
+backup*.sql
+*.dump
+
+# Local-only compose overrides
+docker-compose.override.yml
 
 .idea/
 .claude/
