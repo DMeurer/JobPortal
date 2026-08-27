@@ -1,5 +1,14 @@
 .PHONY: help build up down logs restart clean migrate shell db-shell test
 
+# Run psql/pg_dump inside the postgres container using the credentials the
+# container was actually started with. These targets used to hardcode
+# `jobportal_user`, which fails with `role "jobportal_user" does not exist`
+# whenever POSTGRES_USER in .env says otherwise. Reading them from the
+# container's own environment cannot drift from how the database was created.
+PSQL      = docker compose exec -T postgres sh -c 'exec psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+PSQL_TTY  = docker compose exec postgres sh -c 'exec psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
+PG_DUMP   = docker compose exec -T postgres sh -c 'exec pg_dump -U "$$POSTGRES_USER" "$$POSTGRES_DB"'
+
 help: ## Show this help message
 	@echo "Job Portal - Docker Management Commands"
 	@echo ""
@@ -36,7 +45,7 @@ shell: ## Open shell in backend container
 	docker compose exec backend bash
 
 db-shell: ## Open PostgreSQL shell
-	docker compose exec postgres psql -U jobportal_user -d jobportal
+	$(PSQL_TTY)
 
 status: ## Show status of all containers
 	docker compose ps
@@ -50,34 +59,35 @@ dev: ## Start services in development mode (with logs)
 	docker compose up
 
 backup-db: ## Backup database to backup.sql
-	docker compose exec postgres pg_dump -U jobportal_user jobportal > backup.sql
+	$(PG_DUMP) > backup.sql
 	@echo "Database backed up to backup.sql"
 
 restore-db: ## Restore database from backup.sql
-	docker compose exec -T postgres psql -U jobportal_user jobportal < backup.sql
+	$(PSQL) < backup.sql
 	@echo "Database restored from backup.sql"
 
 refresh-stats: ## Rebuild the statistics materialized view (safe to run any time)
-	docker compose exec -T postgres psql -U jobportal_user -d jobportal \
-		-c "REFRESH MATERIALIZED VIEW CONCURRENTLY company_date_statistics"
+	@echo "REFRESH MATERIALIZED VIEW CONCURRENTLY company_date_statistics;" | $(PSQL)
 	@echo "Statistics refreshed"
 
 rebuild-stats: ## Force a blocking rebuild of the statistics view (use if refresh-stats fails)
-	docker compose exec -T postgres psql -U jobportal_user -d jobportal \
-		-c "REFRESH MATERIALIZED VIEW company_date_statistics"
+	@echo "REFRESH MATERIALIZED VIEW company_date_statistics;" | $(PSQL)
 	@echo "Statistics rebuilt"
 
 stats-status: ## Show statistics view row count and how current it is
-	@docker compose exec -T postgres psql -U jobportal_user -d jobportal -c \
-		"SELECT (SELECT count(*) FROM company_date_statistics) AS view_rows, \
-		        (SELECT max(scrape_date) FROM company_date_statistics) AS view_latest, \
-		        (SELECT max(scrape_date) FROM inserts) AS data_latest, \
-		        CASE WHEN (SELECT max(scrape_date) FROM company_date_statistics) \
-		                = (SELECT max(scrape_date) FROM inserts) \
-		             THEN 'current' ELSE 'STALE - run make refresh-stats' END AS state"
+	@echo "SELECT (SELECT count(*) FROM company_date_statistics) AS view_rows, \
+	              (SELECT max(scrape_date) FROM company_date_statistics) AS view_latest, \
+	              (SELECT max(scrape_date) FROM inserts) AS data_latest, \
+	              CASE WHEN (SELECT max(scrape_date) FROM company_date_statistics) \
+	                        = (SELECT max(scrape_date) FROM inserts) \
+	                   THEN 'current' ELSE 'STALE - run make refresh-stats' END AS state;" | $(PSQL)
 
-test-backend: ## Run backend tests
-	docker compose exec -T -e PYTHONPATH=/app -w /app backend python -m pytest tests -q
+test-backend: ## Run backend tests (creates and drops its own jobportal_test database)
+	@docker compose exec -T backend sh -c \
+		'python -m pytest --version >/dev/null 2>&1 || pip install --quiet pytest httpx'
+	docker compose exec -T -w /app -e PYTHONPATH=/app backend sh -c \
+		'TEST_DATABASE_URL="postgresql://$$DATABASE_USER:$$DATABASE_PASSWORD@$$DATABASE_HOST:$$DATABASE_PORT/postgres" \
+		 python -m pytest tests -q'
 
 test-frontend: ## Run frontend tests
 	cd Frontend && npm test -- --watch=false
